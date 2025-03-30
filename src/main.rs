@@ -39,10 +39,4 @@ fn print_help() {
         "Usage: rilox [script] [flags]\nUse -i/-d or --info --debug for log level adjustments\n-h or --help for this help message\n Use no script to run prompt"
     )
 }
-fn rl_error(line: usize, message: String) {
-    report(line, message);
-}
-fn report(line: usize, message: String) {
-    eprintln!("[line {line}] Error: {message}")
-    // TODO add better eror reporting :)
-}
+

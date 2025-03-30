@@ -19,8 +19,8 @@ impl Lox {
     pub fn run_file(&mut self, path: String) -> Result<()> {
         debug!("Source File: {}", path);
         let source = fs::read_to_string(path)?;
-        let scanner = Scanner::new(source, self);
-        todo!();
+        self.run(&source);
+        Ok(())
     }
     pub fn had_error(&mut self) -> bool {
         self.had_error

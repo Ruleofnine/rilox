@@ -2,6 +2,7 @@ use crate::error::ErrorReporter;
 use crate::lox::Lox;
 use crate::token::{Literal, Token};
 use crate::token_type::{self, TokenType};
+use log::debug;
 pub struct Scanner<'a> {
     source: String,
     tokens: Vec<Token>,
@@ -24,15 +25,14 @@ impl<'a> Scanner<'a> {
     pub fn error(&mut self, message: &str) {
         self.reporter.report(self.line, &message);
     }
-    pub fn scan_tokens(&mut self)->Vec<Token> {
-        while !self.is_at_end(){
+    pub fn scan_tokens(&mut self) -> Vec<Token> {
+        while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
         }
-        self.start= self.current;
+        self.start = self.current;
         self.add_token(TokenType::Eof);
         std::mem::take(&mut self.tokens)
-
     }
 
     pub fn add_token(&mut self, token_type: TokenType) {
@@ -105,6 +105,20 @@ impl<'a> Scanner<'a> {
                     while self.peek() != '\n' && !self.is_at_end() {
                         self.advance();
                     }
+                } else if self.match_char('*') {
+                    // we are in a muilti-line comment
+                    while !(self.peek() == '*' && self.peek_next() == '/') && !self.is_at_end() {
+                        if self.peek() == '\n' {
+                            self.line += 1;
+                        }
+                        self.advance();
+                    }
+                    if self.is_at_end() {
+                        self.error("Unterminated multi-line string.");
+                        return;
+                    }
+                    self.advance();
+                    self.advance();
                 } else {
                     self.add_token(TokenType::Slash)
                 }
