@@ -1,4 +1,6 @@
+use crate::ast_printer::print_ast;
 use crate::error::ErrorReporter;
+use crate::parser::Parser;
 use crate::scanner::{self, Scanner};
 use anyhow::Result;
 use log::debug;
@@ -48,10 +50,19 @@ impl Lox {
         Ok(())
     }
     pub fn run(&mut self, input: &str) {
-        let mut scanner = Scanner::new(input.to_string(),self);
+        let mut scanner = Scanner::new(input.to_string(), self);
         let tokens = scanner.scan_tokens();
-        for i in tokens{
-            println!("{}",i);
+        debug!("Tokenizer compeleted");
+        let mut parser = Parser::new(tokens, self);
+        debug!("Parsing compeleted");
+        match parser.parse() {
+            Ok(expr) => {
+                debug!("Printing AST");
+                println!("{expr}");
+            }
+            Err(_) => {
+                eprintln!("Parsing failed. See above for error.");
+            }
         }
     }
 }
