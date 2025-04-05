@@ -1,8 +1,10 @@
 mod ast_printer;
 pub mod error;
 mod expr;
+mod interpreter;
 pub mod lox;
 mod parser;
 mod scanner;
+mod stmt;
 mod token;
 mod token_type;

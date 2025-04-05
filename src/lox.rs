@@ -1,7 +1,8 @@
-use crate::ast_printer::print_ast;
 use crate::error::ErrorReporter;
+use crate::interpreter::Interpreter;
 use crate::parser::Parser;
-use crate::scanner::{self, Scanner};
+use crate::scanner::Scanner;
+use ansi_term::Color::{Red, Yellow};
 use anyhow::Result;
 use log::debug;
 use std::fs;
@@ -11,8 +12,13 @@ pub struct Lox {
     had_error: bool,
     had_runtime_error: bool,
 }
+impl Default for Lox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Lox {
-    pub fn new() -> Lox {
+    pub fn new() -> Self {
         Lox {
             had_error: false,
             had_runtime_error: false,
@@ -54,21 +60,31 @@ impl Lox {
         let tokens = scanner.scan_tokens();
         debug!("Tokenizer compeleted");
         let mut parser = Parser::new(tokens, self);
-        debug!("Parsing compeleted");
-        match parser.parse() {
-            Ok(expr) => {
-                debug!("Printing AST");
-                println!("{expr}");
-            }
-            Err(_) => {
-                eprintln!("Parsing failed. See above for error.");
+        let mut interpreter = Interpreter::new();
+        debug!("Parsing started");
+        while !parser.is_at_end() {
+            debug!("Starting new parse");
+            match parser.parse() {
+                Ok(stmt) => {
+                    interpreter.execute(&stmt);
+                }
+                Err(_) => {
+                    eprintln!("Parsing failed. See above for error.");
+                    parser.syncronize_expr();
+                }
             }
         }
     }
 }
 impl ErrorReporter for Lox {
     fn report(&mut self, line: usize, message: &str) {
-        eprintln!("[line {}] Error: {}", line, message);
+        eprintln!(
+            "{} {} {}",
+            Red.paint(format!("[line {}]", line)),
+            Yellow.paint("Error:"),
+            message
+        );
+
         self.had_error = true;
     }
     fn had_error(&self) -> bool {

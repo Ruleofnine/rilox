@@ -1,10 +1,8 @@
-use anyhow::{Result, anyhow};
-use log::{LevelFilter, debug, info};
+use ansi_term::Color::Red;
+use anyhow::Result;
+use log::LevelFilter;
 use rilox::lox::Lox;
-use std::io::{self, Write};
-use std::process::ExitCode;
-use std::{env::args, fs};
-
+use std::env::args;
 
 fn main() -> Result<()> {
     let mut log_level = LevelFilter::Warn;
@@ -21,7 +19,10 @@ fn main() -> Result<()> {
                 if source_file.is_none() {
                     source_file = Some(arg);
                 } else {
-                    println!("Warning: Ignoring Extra argument: '{}'", arg)
+                    eprintln!(
+                        "{}",
+                        Red.paint(format!("Warning: Ignoring Extra argument: '{}'", arg))
+                    )
                 }
             }
         }
@@ -39,4 +40,3 @@ fn print_help() {
         "Usage: rilox [script] [flags]\nUse -i/-d or --info --debug for log level adjustments\n-h or --help for this help message\n Use no script to run prompt"
     )
 }
-

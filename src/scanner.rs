@@ -1,7 +1,6 @@
 use crate::error::ErrorReporter;
-use crate::lox::Lox;
 use crate::token::{Literal, Token};
-use crate::token_type::{self, TokenType};
+use crate::token_type::TokenType;
 use log::debug;
 pub struct Scanner<'a> {
     source: String,
@@ -23,7 +22,7 @@ impl<'a> Scanner<'a> {
         }
     }
     pub fn error(&mut self, message: &str) {
-        self.reporter.report(self.line, &message);
+        self.reporter.report(self.line, message);
     }
     pub fn scan_tokens(&mut self) -> Vec<Token> {
         while !self.is_at_end() {
@@ -95,6 +94,8 @@ impl<'a> Scanner<'a> {
             '+' => self.add_token(TokenType::Plus),
             ';' => self.add_token(TokenType::Semicolon),
             '*' => self.add_token(TokenType::Star),
+            '?' => self.add_token(TokenType::Question),
+            ':' => self.add_token(TokenType::Colon),
             '!' => self.add_token_if_matches('=', TokenType::BangEqual, TokenType::Bang),
             '=' => self.add_token_if_matches('=', TokenType::EqualEqual, TokenType::Equal),
             '<' => self.add_token_if_matches('=', TokenType::LessEqual, TokenType::Less),
@@ -107,7 +108,7 @@ impl<'a> Scanner<'a> {
                     }
                 } else if self.match_char('*') {
                     // we are in a muilti-line comment
-                    while !(self.peek() == '*' && self.peek_next() == '/') && !self.is_at_end() {
+                    while !(self.is_at_end() || self.peek() == '*' && self.peek_next() == '/') {
                         if self.peek() == '\n' {
                             self.line += 1;
                         }
@@ -152,6 +153,7 @@ impl<'a> Scanner<'a> {
         let start = self.start + 1;
         let end = self.current - 1;
         if let Some(value) = self.source.get(start..end) {
+            println!("adding string literal token: {}", &value);
             self.add_token_with_literal(
                 TokenType::String,
                 Some(Literal::String(value.to_string())),
@@ -175,7 +177,6 @@ impl<'a> Scanner<'a> {
             self.add_token_with_literal(TokenType::Number, Some(Literal::Number(num)));
         } else {
             self.error(&format!("Could not parse number: {}", num_to_parse));
-            return;
         };
     }
     fn identifier(&mut self) {
@@ -213,6 +214,3 @@ fn identifier_type(name: &str) -> TokenType {
         _ => TokenType::Identifier,
     }
 }
-
-
-
