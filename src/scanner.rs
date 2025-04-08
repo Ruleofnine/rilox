@@ -100,6 +100,7 @@ impl<'a> Scanner<'a> {
             '=' => self.add_token_if_matches('=', TokenType::EqualEqual, TokenType::Equal),
             '<' => self.add_token_if_matches('=', TokenType::LessEqual, TokenType::Less),
             '>' => self.add_token_if_matches('=', TokenType::GreaterEqual, TokenType::Greater),
+            '^' => self.add_token(TokenType::Caret),
             '/' => {
                 if self.match_char('/') {
                     // Skip the entire line if you see a line comment
@@ -153,7 +154,6 @@ impl<'a> Scanner<'a> {
         let start = self.start + 1;
         let end = self.current - 1;
         if let Some(value) = self.source.get(start..end) {
-            println!("adding string literal token: {}", &value);
             self.add_token_with_literal(
                 TokenType::String,
                 Some(Literal::String(value.to_string())),

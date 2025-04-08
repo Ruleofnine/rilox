@@ -1,8 +1,13 @@
 use crate::error::ErrorReporter;
-use crate::interpreter::Interpreter;
+use crate::expr::LiteralValue;
+use crate::interpreter::{Interpreter, evaluate};
 use crate::parser::Parser;
 use crate::scanner::Scanner;
-use ansi_term::Color::{Red, Yellow};
+use crate::stmt::Stmt;
+use ansi_term::{
+    Color::{Red, Yellow},
+    Style,
+};
 use anyhow::Result;
 use log::debug;
 use std::fs;
@@ -27,7 +32,7 @@ impl Lox {
     pub fn run_file(&mut self, path: String) -> Result<()> {
         debug!("Source File: {}", path);
         let source = fs::read_to_string(path)?;
-        self.run(&source);
+        self.run(&source, false);
         Ok(())
     }
     pub fn had_error(&mut self) -> bool {
@@ -46,31 +51,50 @@ impl Lox {
                 //TODO this seems sloppy
                 std::process::exit(1)
             }
-
             let input = input.trim();
-            if input.is_empty() {
+            if input.is_empty() || input == "exit" {
+                debug!("Exiting REPL");
                 break;
             }
-            self.run(input);
+            self.run(input, true);
         }
         Ok(())
     }
-    pub fn run(&mut self, input: &str) {
+    pub fn run(&mut self, input: &str, repl_mode: bool) {
         let mut scanner = Scanner::new(input.to_string(), self);
         let tokens = scanner.scan_tokens();
-        debug!("Tokenizer compeleted");
+        debug!("Tokenizer completed");
         let mut parser = Parser::new(tokens, self);
         let mut interpreter = Interpreter::new();
         debug!("Parsing started");
         while !parser.is_at_end() {
             debug!("Starting new parse");
-            match parser.parse() {
-                Ok(stmt) => {
-                    interpreter.execute(&stmt);
+            if !repl_mode {
+                debug!("File mode");
+                match parser.parse() {
+                    Ok(stmt) => {
+                        if let Err(err) = interpreter.execute(&stmt) {
+                            let reset = Style::new();
+                            eprintln!(
+                                "{} {} {}{}",
+                                Red.paint("Runtime"),
+                                Yellow.paint("Error:"),
+                                reset.prefix(),
+                                err
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        parser.syncronize_expr();
+                    }
                 }
-                Err(_) => {
-                    eprintln!("Parsing failed. See above for error.");
-                    parser.syncronize_expr();
+            } else {
+                match parser.expression() {
+                    Ok(expr) => match evaluate(&expr) {
+                        Ok(value) => println!("{}", value),
+                        Err(err) => eprintln!("Runtime error: {}", err),
+                    },
+                    Err(_) => parser.syncronize_expr(),
                 }
             }
         }

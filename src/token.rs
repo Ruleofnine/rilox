@@ -21,8 +21,8 @@ impl fmt::Display for Literal {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
-    pub lexeme: String,
-    pub literal: Option<Literal>,
+    pub lexeme: String,           //raw data i.e "my string"
+    pub literal: Option<Literal>, //parsed data i.e my string ; no quotes since it's parsed
     pub line: usize,
 }
 

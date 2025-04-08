@@ -1,8 +1,9 @@
 use crate::error::ErrorReporter;
 use crate::expr::{Expr, LiteralValue};
 use crate::stmt::Stmt;
-use crate::token::Token;
+use crate::token::{Literal, Token};
 use crate::token_type::TokenType;
+use log::debug;
 
 /*
 program        → statement* EOF ;
@@ -14,7 +15,8 @@ assignment     → equality ( "=" assignment )? ;
 equality       → comparison ( ( "==" | "!=" ) comparison )* ;
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 term           → factor ( ( "-" | "+" ) factor )* ;
-factor         → unary ( ( "/" | "*" ) unary )* ;
+factor         → power ( ( "/" | "*" ) power )* ;
+power          → unary ( "^" power )? ;
 unary          → ( "!" | "-" ) unary | primary ;
 primary        → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
 */
@@ -123,12 +125,17 @@ impl<'a> Parser<'a> {
     }
 
     pub fn factor(&mut self) -> Result<Expr, ParseError> {
-        self.parse_binary_expr(&[TokenType::Star, TokenType::Slash], Parser::unary)
+        self.parse_binary_expr(&[TokenType::Star, TokenType::Slash], Parser::exponents)
+    }
+    pub fn exponents(&mut self) -> Result<Expr, ParseError> {
+        self.parse_binary_expr(&[TokenType::Caret], Parser::unary)
     }
     pub fn unary(&mut self) -> Result<Expr, ParseError> {
         if self.match_any(&[TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous().clone();
+            debug!("{}", &operator);
             let right = self.unary()?;
+
             return Ok(Expr::Unary(operator, Box::new(right)));
         }
         self.primary()
@@ -158,8 +165,12 @@ impl<'a> Parser<'a> {
             }
             TokenType::String => {
                 let token = self.advance().clone();
-                let s = token.lexeme.clone();
-                Ok(Expr::Literal(LiteralValue::String(s)))
+                if let Some(Literal::String(s)) = token.literal {
+                    Ok(Expr::Literal(LiteralValue::String(s)))
+                } else {
+                    self.error(&token, "Expected String Literal.");
+                    Err(ParseError)
+                }
             }
             TokenType::LeftParen => {
                 self.advance(); // consume '('
@@ -167,7 +178,6 @@ impl<'a> Parser<'a> {
                 self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
                 Ok(Expr::Grouping(Box::new(expr)))
             }
-            TokenType::Semicolon => Ok(Expr::Literal(LiteralValue::Nil)),
             _ => {
                 let token = self.peek().clone();
                 self.error(&token, "Expected expression.");
@@ -215,10 +225,6 @@ impl<'a> Parser<'a> {
     fn check(&self, token_type: TokenType) -> bool {
         !self.is_at_end() && self.peek().token_type == token_type
     }
-    pub fn check_any(&self, types: &[TokenType]) -> bool {
-        types.iter().any(|t| self.check(*t))
-    }
-
     pub fn error(&mut self, token: &Token, message: &str) {
         let location = if token.token_type == TokenType::Eof {
             "at end".to_string()
@@ -264,17 +270,6 @@ impl<'a> Parser<'a> {
     where
         F: Fn(&mut Self) -> Result<Expr, ParseError>,
     {
-        // Start: Check for operator with no left-hand side
-        if self.match_any(operators) {
-            let operator = self.previous().clone();
-            self.error(&operator, "Binary operator missing left-hand operand.");
-
-            // Attempt to parse RHS anyway, to continue building AST
-            let rhs = parse_rhs(self).unwrap_or(Expr::Error);
-            return Err(ParseError);
-            //return Ok(Expr::Binary(Box::new(Expr::Error), operator, Box::new(rhs)));
-        }
-
         // Parse the left-hand side normally
         let mut expr = parse_rhs(self)?;
 
