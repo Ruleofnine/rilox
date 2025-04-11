@@ -1,4 +1,5 @@
 mod ast_printer;
+mod environment;
 pub mod error;
 mod expr;
 mod interpreter;

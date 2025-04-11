@@ -3,22 +3,50 @@ use crate::expr::{Expr, LiteralValue};
 use crate::stmt::Stmt;
 use crate::token::{Literal, Token};
 use crate::token_type::TokenType;
-use log::debug;
+use log::{debug, error};
 
 /*
-program        → statement* EOF ;
-statement      → expression ";" ;
-expression     → comma ;
-comma          → ternary ( "," ternary )* ;
-ternary        → assignment ( "?" ternary ":" ternary )? ;
-assignment     → equality ( "=" assignment )? ;
-equality       → comparison ( ( "==" | "!=" ) comparison )* ;
-comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-term           → factor ( ( "-" | "+" ) factor )* ;
-factor         → power ( ( "/" | "*" ) power )* ;
-power          → unary ( "^" power )? ;
-unary          → ( "!" | "-" ) unary | primary ;
-primary        → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" ;
+program        → delcaration* EOF
+
+declaration    → varDecl | statement
+
+varDecl        → "var" IDENTIFIER ( "=" expression )? ";"
+
+statement      → exprStmt
+               | printStmt
+               | block
+               | ifStmt
+               | whileStmt
+               | mutationStmt
+
+
+exprStmt       → expression ";"
+printStmt      → "print" expression ";"
+block          → "{" delcaration* "}"
+ifStmt         → "if" "(" expression ")"  block ( else" block )?
+whileStmt      → "while" "(" expression ")" statement
+mutationStmt   → IDENTIFIER ( "+=" | "-=" ) expression ";"
+                 | ( "++" | "--" ) IDENTIFIER ";"
+                 | IDENTIFIER ( "++" | "--" ) ";"
+
+expression     → assignment
+
+assignment     → IDENTIFIER "=" assignment
+               | comma
+
+comma          → ternary ( "," ternary )*
+
+ternary        → equality ( "?" ternary ":" ternary )?
+
+equality       → comparison ( ( "==" | "!=" ) comparison )*
+comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )*
+term           → factor ( ( "-" | "+" ) factor )*
+factor         → power ( ( "/" | "*" | "%") power )*
+power          → unary ( "^" power )?
+
+unary          → ( "!" | "-" ) unary | primary
+
+primary        → NUMBER | STRING | "true" | "false" | "nil" | IDENTIFIER | "(" expression ")"
 */
 
 #[derive(Debug)]
@@ -37,17 +65,156 @@ impl<'a> Parser<'a> {
         }
     }
     pub fn parse(&mut self) -> Result<Stmt, ParseError> {
-        self.statement()
+        self.declaration()
+    }
+    pub fn declaration(&mut self) -> Result<Stmt, ParseError> {
+        if self.match_any(&[TokenType::Var]) {
+            self.var_declaration()
+        } else {
+            self.statement()
+        }
+    }
+    pub fn if_block(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(
+            TokenType::LeftParen,
+            "Expected '(' after keyword 'if' and before statement.",
+        )?;
+        let condition = self.expression()?;
+        self.consume(
+            TokenType::RightParen,
+            "Expected ')' after keyword 'if' and before statement.",
+        )?;
+        self.consume(
+            TokenType::LeftBrace,
+            "Expected '{' after expression and before statement.",
+        )?;
+        let if_branch = Box::new(self.block()?);
+        let mut else_branch = None;
+        if self.match_any(&[TokenType::Else]) {
+            //when we call self.block next it is going to consume the ending '}'
+            self.consume(
+                TokenType::LeftBrace,
+                "Expected '{' after 'else' and before statement.",
+            )?;
+            else_branch = Some(Box::new(self.block()?));
+        }
+        Ok(Stmt::If {
+            condition,
+            if_branch,
+            else_branch,
+        })
+    }
+    pub fn while_block(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(
+            TokenType::LeftParen,
+            "Expected '(' after keyword 'if' and before statement.",
+        )?;
+        let condition = self.expression()?;
+        self.consume(
+            TokenType::RightParen,
+            "Expected ')' after keyword 'if' and before statement.",
+        )?;
+        self.consume(
+            TokenType::LeftBrace,
+            "Expected '{' after expression and before statement.",
+        )?;
+        let expr = self.block()?;
+        Ok(Stmt::While(condition, Box::new(expr)))
+    }
+    pub fn block(&mut self) -> Result<Stmt, ParseError> {
+        let mut stmts = Vec::new();
+        while !self.is_at_end() && !self.check(TokenType::RightBrace) {
+            let decl = self.declaration()?;
+            stmts.push(decl)
+        }
+        self.consume(
+            TokenType::RightBrace,
+            "Expected '}' or value to delcare block statement",
+        )?;
+        Ok(Stmt::Block(stmts))
+    }
+    pub fn var_declaration(&mut self) -> Result<Stmt, ParseError> {
+        if self.match_any(&[TokenType::Identifier]) {
+            let token = self.previous().clone();
+            let expr = match self.peek().token_type {
+                TokenType::Equal => {
+                    self.advance();
+                    Ok(Some(self.expression()?))
+                }
+                TokenType::Semicolon => Ok(None),
+                _ => {
+                    self.error(
+                        &self.peek().clone(),
+                        "Expected ';' or value to delcare varaible",
+                    );
+                    Err(ParseError)
+                }
+            };
+            self.consume(TokenType::Semicolon, "Expect ';' after value")?;
+            Ok(Stmt::Var(token, expr?))
+        } else {
+            self.error(
+                &self.peek().clone(),
+                "Expected Identifier after variable declaration",
+            );
+            Err(ParseError)
+        }
+    }
+    pub fn mutation_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let starting_token = self.peek().clone();
+        match starting_token.token_type {
+            TokenType::PlusPlus | TokenType::MinusMinus => {
+                self.advance();
+                self.consume(
+                    TokenType::Identifier,
+                    &format!("Expected 'Identifier' after {}", starting_token.lexeme),
+                )?;
+                let variable = self.previous().clone();
+            }
+            equal_ops => {}
+        }
+
+        todo!()
+        /*Ok(Stmt::Mutation {
+                            name: self.previous().clone(),
+                            operator: TokenType::Plus,
+                            value: 1,
+                        }
+        )
+                */
     }
     pub fn statement(&mut self) -> Result<Stmt, ParseError> {
-        if self.match_any(&[TokenType::Print]) {
-            let expr = self.expression()?;
-            self.consume(TokenType::Semicolon, "Expect ';' after value")?;
-            Ok(Stmt::Print(expr))
-        } else {
-            let expr = self.expression()?;
-            self.consume(TokenType::Semicolon, "Expect ';' after value")?;
-            Ok(Stmt::Expression(expr))
+        //TODO this seems odd that we advance in each, but keepeing it flexible
+        //might be smart
+        match self.peek().token_type {
+            TokenType::Print => {
+                self.advance();
+                let expr = self.expression()?;
+                self.consume(TokenType::Semicolon, "Expect ';' after value")?;
+                Ok(Stmt::Print(expr))
+            }
+            TokenType::LeftBrace => {
+                self.advance();
+                self.block()
+            }
+            TokenType::If => {
+                self.advance();
+                self.if_block()
+            }
+            TokenType::While => {
+                self.advance();
+                self.while_block()
+            }
+            TokenType::Identifier
+            | TokenType::PlusPlus
+            | TokenType::MinusMinus
+            | TokenType::MinusEqual
+            | TokenType::PlusEqual => self.mutation_stmt(),
+            _ => {
+                let expr = self.expression()?;
+                self.consume(TokenType::Semicolon, "Expect ';' after value")?;
+                Ok(Stmt::Expression(expr))
+            }
         }
     }
     pub fn expression(&mut self) -> Result<Expr, ParseError> {
@@ -125,7 +292,10 @@ impl<'a> Parser<'a> {
     }
 
     pub fn factor(&mut self) -> Result<Expr, ParseError> {
-        self.parse_binary_expr(&[TokenType::Star, TokenType::Slash], Parser::exponents)
+        self.parse_binary_expr(
+            &[TokenType::Star, TokenType::Slash, TokenType::Percent],
+            Parser::exponents,
+        )
     }
     pub fn exponents(&mut self) -> Result<Expr, ParseError> {
         self.parse_binary_expr(&[TokenType::Caret], Parser::unary)
@@ -133,7 +303,6 @@ impl<'a> Parser<'a> {
     pub fn unary(&mut self) -> Result<Expr, ParseError> {
         if self.match_any(&[TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous().clone();
-            debug!("{}", &operator);
             let right = self.unary()?;
 
             return Ok(Expr::Unary(operator, Box::new(right)));
@@ -178,8 +347,13 @@ impl<'a> Parser<'a> {
                 self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
                 Ok(Expr::Grouping(Box::new(expr)))
             }
+            TokenType::Identifier => {
+                let token = self.advance().clone();
+                Ok(Expr::Variable(token))
+            }
             _ => {
                 let token = self.peek().clone();
+                error!("{}", token);
                 self.error(&token, "Expected expression.");
                 Err(ParseError)
             }

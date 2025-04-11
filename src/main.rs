@@ -1,6 +1,7 @@
 use ansi_term::Color::Red;
 use anyhow::Result;
 use log::LevelFilter;
+use log::debug;
 use rilox::lox::Lox;
 use std::env::args;
 
@@ -29,11 +30,11 @@ fn main() -> Result<()> {
     }
     env_logger::builder().filter_level(log_level).init();
     let mut lox = Lox::new();
-    match source_file {
+    let exit_code = match source_file {
         Some(path) => lox.run_file(path),
         None => lox.run_prompt(),
     }?;
-    Ok(())
+    std::process::exit(exit_code);
 }
 fn print_help() {
     println!(

@@ -82,7 +82,6 @@ impl<'a> Scanner<'a> {
 
     pub fn scan_token(&mut self) {
         let c = self.advance();
-
         match c {
             '(' => self.add_token(TokenType::LeftParen),
             ')' => self.add_token(TokenType::RightParen),
@@ -91,7 +90,7 @@ impl<'a> Scanner<'a> {
             ',' => self.add_token(TokenType::Comma),
             '.' => self.add_token(TokenType::Dot),
             '-' => self.add_token(TokenType::Minus),
-            '+' => self.add_token(TokenType::Plus),
+            '+' => self.add_token_if_matches('+', TokenType::PlusPlus, TokenType::Plus),
             ';' => self.add_token(TokenType::Semicolon),
             '*' => self.add_token(TokenType::Star),
             '?' => self.add_token(TokenType::Question),
@@ -101,6 +100,7 @@ impl<'a> Scanner<'a> {
             '<' => self.add_token_if_matches('=', TokenType::LessEqual, TokenType::Less),
             '>' => self.add_token_if_matches('=', TokenType::GreaterEqual, TokenType::Greater),
             '^' => self.add_token(TokenType::Caret),
+            '%' => self.add_token(TokenType::Percent),
             '/' => {
                 if self.match_char('/') {
                     // Skip the entire line if you see a line comment

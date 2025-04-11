@@ -9,13 +9,18 @@ pub enum TokenType {
     Comma,
     Dot,
     Minus,
+    MinusEqual,
+    MinusMinus,
     Plus,
+    PlusEqual,
+    PlusPlus,
     Semicolon,
     Slash,
     Star,
     Question,
     Colon,
     Caret,
+    Percent,
 
     // One or two character tokens.
     Bang,
