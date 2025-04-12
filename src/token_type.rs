@@ -9,11 +9,7 @@ pub enum TokenType {
     Comma,
     Dot,
     Minus,
-    MinusEqual,
-    MinusMinus,
     Plus,
-    PlusEqual,
-    PlusPlus,
     Semicolon,
     Slash,
     Star,
@@ -31,6 +27,10 @@ pub enum TokenType {
     GreaterEqual,
     Less,
     LessEqual,
+    MinusEqual,
+    MinusMinus,
+    PlusEqual,
+    PlusPlus,
 
     // Literals.
     Identifier,
@@ -54,9 +54,9 @@ pub enum TokenType {
     True,
     Var,
     While,
-
     Eof,
 }
+
 impl fmt::Display for TokenType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)

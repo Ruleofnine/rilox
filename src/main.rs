@@ -1,7 +1,6 @@
 use ansi_term::Color::Red;
 use anyhow::Result;
 use log::LevelFilter;
-use log::debug;
 use rilox::lox::Lox;
 use std::env::args;
 

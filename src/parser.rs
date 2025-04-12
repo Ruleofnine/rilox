@@ -1,7 +1,7 @@
 use crate::error::ErrorReporter;
 use crate::expr::{Expr, LiteralValue};
 use crate::stmt::Stmt;
-use crate::token::{Literal, Token};
+use crate::token::Token;
 use crate::token_type::TokenType;
 use log::{debug, error};
 
@@ -17,22 +17,19 @@ statement      → exprStmt
                | block
                | ifStmt
                | whileStmt
-               | mutationStmt
 
 
 exprStmt       → expression ";"
 printStmt      → "print" expression ";"
 block          → "{" delcaration* "}"
 ifStmt         → "if" "(" expression ")"  block ( else" block )?
-whileStmt      → "while" "(" expression ")" statement
-mutationStmt   → IDENTIFIER ( "+=" | "-=" ) expression ";"
-                 | ( "++" | "--" ) IDENTIFIER ";"
-                 | IDENTIFIER ( "++" | "--" ) ";"
+whileStmt      → "while" "(" expression ")" block
 
 expression     → assignment
 
-assignment     → IDENTIFIER "=" assignment
-               | comma
+assignment → ( "++" | "--" ) IDENTIFIER
+           | IDENTIFIER ( "=" assignment | "+=" assignment | "-=" assignment )
+           | comma
 
 comma          → ternary ( "," ternary )*
 
@@ -160,37 +157,55 @@ impl<'a> Parser<'a> {
             Err(ParseError)
         }
     }
-    pub fn mutation_stmt(&mut self) -> Result<Stmt, ParseError> {
-        let starting_token = self.peek().clone();
-        match starting_token.token_type {
-            TokenType::PlusPlus | TokenType::MinusMinus => {
-                self.advance();
-                self.consume(
-                    TokenType::Identifier,
-                    &format!("Expected 'Identifier' after {}", starting_token.lexeme),
-                )?;
-                let variable = self.previous().clone();
-            }
-            equal_ops => {}
+    pub fn for_stmt(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
+        debug!("{:?}", self.peek());
+        let initializer = if self.match_any(&[TokenType::Var]) {
+            Some(self.var_declaration()?)
+        } else if !self.check(TokenType::Semicolon) {
+            Some(self.expression_statement()?)
+        } else {
+            None
+        };
+        let condition = if !self.check(TokenType::Semicolon) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+        self.consume(TokenType::Semicolon, "Expect ';' after loop condition.")?;
+        let increment = if !self.check(TokenType::RightParen) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+        self.consume(TokenType::RightParen, "Expect ')' after for clauses.")?;
+        let mut body = self.statement()?;
+        if let Some(inc) = increment {
+            body = Stmt::Block(vec![body, Stmt::Expression(inc)])
         }
-
-        todo!()
-        /*Ok(Stmt::Mutation {
-                            name: self.previous().clone(),
-                            operator: TokenType::Plus,
-                            value: 1,
-                        }
-        )
-                */
+        let condition = condition.unwrap_or(Expr::Literal(LiteralValue::Bool(true)));
+        let while_stmt = Stmt::While(condition, Box::new(body));
+        if let Some(init) = initializer {
+            Ok(Stmt::Block(vec![init, while_stmt]))
+        } else {
+            Ok(while_stmt)
+        }
+    }
+    pub fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
+        let expr = self.expression()?;
+        self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+        Ok(Stmt::Expression(expr))
     }
     pub fn statement(&mut self) -> Result<Stmt, ParseError> {
         //TODO this seems odd that we advance in each, but keepeing it flexible
         //might be smart
+        debug!("tt: {:?}", self.peek().token_type);
         match self.peek().token_type {
             TokenType::Print => {
                 self.advance();
                 let expr = self.expression()?;
                 self.consume(TokenType::Semicolon, "Expect ';' after value")?;
+                debug!("tt after print: {:?}", self.peek().token_type);
                 Ok(Stmt::Print(expr))
             }
             TokenType::LeftBrace => {
@@ -205,33 +220,58 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.while_block()
             }
-            TokenType::Identifier
-            | TokenType::PlusPlus
-            | TokenType::MinusMinus
-            | TokenType::MinusEqual
-            | TokenType::PlusEqual => self.mutation_stmt(),
-            _ => {
-                let expr = self.expression()?;
-                self.consume(TokenType::Semicolon, "Expect ';' after value")?;
-                Ok(Stmt::Expression(expr))
+            TokenType::For => {
+                self.advance();
+                self.for_stmt()
             }
+            _ => self.expression_statement(),
         }
     }
     pub fn expression(&mut self) -> Result<Expr, ParseError> {
         self.comma()
     }
+    pub fn assignment(&mut self) -> Result<Expr, ParseError> {
+        // Start with the base expression at lower precedence
+        let expr = self.ternary()?;
+
+        // Handle assignment operators ( =, +=, -= )
+        if self.match_any(&[
+            TokenType::MinusEqual,
+            TokenType::PlusEqual,
+            TokenType::Equal,
+        ]) {
+            let operator = self.previous().clone();
+            let value = Box::new(self.assignment()?); // recurse to allow chaining
+
+            if let Expr::Variable(name) = expr {
+                return Ok(if operator.token_type == TokenType::Equal {
+                    Expr::Assign(name, value)
+                } else {
+                    Expr::Mutation {
+                        name,
+                        operator,
+                        value,
+                    }
+                });
+            }
+
+            self.error(&operator, "Invalid assignment target.");
+            return Err(ParseError);
+        }
+        Ok(expr)
+    }
+
     pub fn comma(&mut self) -> Result<Expr, ParseError> {
-        let mut expr = self.ternary()?;
+        let mut expr = self.assignment()?;
         while self.match_any(&[TokenType::Comma]) {
-            let right = self.ternary()?;
+            let right = self.assignment()?;
             expr = Expr::Comma(Box::new(expr), Box::new(right));
         }
 
         Ok(expr)
     }
     pub fn ternary(&mut self) -> Result<Expr, ParseError> {
-        let mut expr = self.assignment()?;
-
+        let mut expr = self.equality()?;
         if self.match_any(&[TokenType::Question]) {
             let expr_on_true = self.ternary().unwrap_or_else(|_| {
                 let token = self.peek().clone();
@@ -244,11 +284,11 @@ impl<'a> Parser<'a> {
                     self.error(&token, "Missing expression in false branch of ternary.");
                     Expr::Error
                 });
-                expr = Expr::Ternary(
-                    Box::new(expr), // Condition Expr
-                    Box::new(expr_on_true),
-                    Box::new(expr_on_false),
-                );
+                expr = Expr::Ternary {
+                    condition: Box::new(expr), // Condition Expr
+                    true_branch: Box::new(expr_on_true),
+                    false_branch: Box::new(expr_on_false),
+                };
             } else {
                 let token = self.peek().clone();
                 self.error(&token, "Missing ':' in Ternary Oprerator");
@@ -257,19 +297,7 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
-    pub fn assignment(&mut self) -> Result<Expr, ParseError> {
-        let expr = self.equality()?;
-        if self.match_any(&[TokenType::Equal]) {
-            let eqauls = self.previous().clone();
-            let value = self.assignment()?;
-            if let Expr::Variable(name) = expr {
-                return Ok(Expr::Assign(name, Box::new(value)));
-            }
-            self.error(&eqauls, "Invalid assignment target.");
-            return Err(ParseError);
-        }
-        Ok(expr)
-    }
+
     pub fn equality(&mut self) -> Result<Expr, ParseError> {
         self.parse_binary_expr(
             &[TokenType::EqualEqual, TokenType::BangEqual],
@@ -294,20 +322,58 @@ impl<'a> Parser<'a> {
     pub fn factor(&mut self) -> Result<Expr, ParseError> {
         self.parse_binary_expr(
             &[TokenType::Star, TokenType::Slash, TokenType::Percent],
-            Parser::exponents,
+            Parser::power,
         )
     }
-    pub fn exponents(&mut self) -> Result<Expr, ParseError> {
+    pub fn power(&mut self) -> Result<Expr, ParseError> {
         self.parse_binary_expr(&[TokenType::Caret], Parser::unary)
     }
     pub fn unary(&mut self) -> Result<Expr, ParseError> {
-        if self.match_any(&[TokenType::Bang, TokenType::Minus]) {
+        if self.match_any(&[
+            TokenType::Bang,
+            TokenType::Minus,
+            TokenType::PlusPlus,
+            TokenType::MinusMinus,
+        ]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
 
+            // Special case: if ++ or --, expect identifier
+            if operator.token_type == TokenType::PlusPlus
+                || operator.token_type == TokenType::MinusMinus
+            {
+                if let Expr::Variable(name) = right {
+                    return Ok(Expr::Mutation {
+                        name,
+                        operator,
+                        value: Box::new(Expr::Literal(LiteralValue::Number(1.))),
+                    });
+                } else {
+                    self.error(&operator, "Expected variable after mutation operator.");
+                    return Err(ParseError);
+                }
+            }
+
             return Ok(Expr::Unary(operator, Box::new(right)));
         }
-        self.primary()
+        self.call()
+    }
+    pub fn call(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.primary()?;
+        while self.match_any(&[TokenType::PlusPlus, TokenType::MinusMinus]) {
+            let operator = self.previous().clone();
+            if let Expr::Variable(name) = expr {
+                expr = Expr::Mutation {
+                    name,
+                    operator,
+                    value: Box::new(Expr::Literal(LiteralValue::Number(1.))),
+                };
+            } else {
+                self.error(&operator, "Can only apply mutation operators to variables.");
+                return Err(ParseError);
+            }
+        }
+        Ok(expr)
     }
 
     pub fn primary(&mut self) -> Result<Expr, ParseError> {
@@ -334,7 +400,7 @@ impl<'a> Parser<'a> {
             }
             TokenType::String => {
                 let token = self.advance().clone();
-                if let Some(Literal::String(s)) = token.literal {
+                if let Some(LiteralValue::String(s)) = token.literal {
                     Ok(Expr::Literal(LiteralValue::String(s)))
                 } else {
                     self.error(&token, "Expected String Literal.");
@@ -408,13 +474,6 @@ impl<'a> Parser<'a> {
         self.reporter
             .report(token.line, &format!("{} {}", location, message));
     }
-    pub fn syncronize_expr(&mut self) {
-        self.advance();
-        while !self.is_at_end() {
-            self.advance();
-        }
-    }
-
     pub fn syncronize_stmt(&mut self) {
         self.advance();
         while !self.is_at_end() {

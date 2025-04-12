@@ -6,11 +6,6 @@ pub enum Stmt {
     Print(Expr),
     Var(Token, Option<Expr>),
     Block(Vec<Stmt>),
-    Mutation {
-        name: Token,
-        operator: Token,
-        value: Expr,
-    },
     If {
         condition: Expr,
         if_branch: Box<Stmt>,

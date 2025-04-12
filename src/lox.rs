@@ -1,9 +1,7 @@
 use crate::error::ErrorReporter;
-use crate::expr::LiteralValue;
 use crate::interpreter::Interpreter;
 use crate::parser::Parser;
 use crate::scanner::Scanner;
-use crate::stmt::Stmt;
 use ansi_term::{
     Color::{Red, Yellow},
     Style,
@@ -14,11 +12,11 @@ use std::fs;
 use std::io::{self, Write};
 
 const EXIT_SUCCESS: i32 = 0;
-const EXIT_COMPILE_ERROR: i32 = 65;
+//const EXIT_COMPILE_ERROR: i32 = 65;
 const EXIT_RUNTIME_ERROR: i32 = 70;
 pub struct Lox {
     had_error: bool,
-    had_runtime_error: bool,
+    //had_runtime_error: bool,
 }
 impl Default for Lox {
     fn default() -> Self {
@@ -29,7 +27,7 @@ impl Lox {
     pub fn new() -> Self {
         Lox {
             had_error: false,
-            had_runtime_error: false,
+            //had_runtime_error: false,
         }
     }
     pub fn run_file(&mut self, path: String) -> Result<i32> {
@@ -104,7 +102,7 @@ impl Lox {
                     }
                     Err(_) => {
                         parser.syncronize_stmt();
-                        return Ok(EXIT_COMPILE_ERROR);
+                        continue;
                     }
                 }
             }

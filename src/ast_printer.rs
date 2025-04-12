@@ -7,7 +7,6 @@ pub fn print_ast(expr: &Expr) -> String {
             LiteralValue::Bool(b) => b.to_string(),
             LiteralValue::Nil => "nil".to_string(),
             LiteralValue::String(s) => s.to_string(),
-            LiteralValue::Error => "<error>".to_string(),
         },
         Expr::Grouping(inner) => format!("(group {})", print_ast(inner)),
         Expr::Unary(op, right) => format!("({} {})", op.lexeme, print_ast(right)),
@@ -19,13 +18,24 @@ pub fn print_ast(expr: &Expr) -> String {
         }
         Expr::Variable(name) => name.lexeme.clone(),
         Expr::Assign(name, value) => format!("(assign {} = {})", name.lexeme, print_ast(value)),
-        Expr::Ternary(condition, on_true, on_false) => {
+        Expr::Ternary {
+            condition,
+            true_branch,
+            false_branch,
+        } => {
             format!(
                 "({} ? {} : {})",
                 print_ast(condition),
-                print_ast(on_true),
-                print_ast(on_false)
+                print_ast(true_branch),
+                print_ast(false_branch)
             )
+        }
+        Expr::Mutation {
+            name,
+            operator,
+            value,
+        } => {
+            format!("(Mutation: {}  {} {})", name, operator, print_ast(value))
         }
         Expr::Error => "<error>".to_string(),
     }

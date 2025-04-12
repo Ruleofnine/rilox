@@ -1,11 +1,10 @@
 use std::cell::RefCell;
 
-use crate::environment::{self, Environment};
+use crate::environment::Environment;
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::expr::{Expr, LiteralValue};
 use crate::stmt::Stmt;
-use crate::token_type::{self, TokenType};
-use log::{debug, error};
+use crate::token_type::TokenType;
 use std::rc::Rc;
 
 pub struct Interpreter {
@@ -67,18 +66,6 @@ impl Interpreter {
                     self.statement(statement)?;
                 }
             }
-            Stmt::Mutation {
-                name,
-                operator,
-                value,
-            } => {
-                let value = self.evaluate(value)?;
-                self.statement(&Stmt::Var(name.clone(), Some(Expr::Literal(value))))?;
-            }
-            _ => {
-                error!("Not implemented : {:?}", stmt);
-                todo!()
-            }
         }
         Ok(())
     }
@@ -109,6 +96,40 @@ impl Interpreter {
                 Environment::assign(self.environment.clone(), name, expr.clone())?;
                 Ok(expr)
             }
+            Expr::Mutation {
+                name,
+                operator,
+                value,
+            } => {
+                let value = self.evaluate(value)?;
+                let var_value = Environment::get(self.environment.clone(), name)?;
+                let (var_num, value_num) = match (var_value, value) {
+                    (LiteralValue::Number(a), LiteralValue::Number(b)) => (a, b),
+                    other => {
+                        return Err(RuntimeError::new(&format!(
+                            "Expected to add or subtract two literal values found '{:?}'",
+                            other,
+                        )));
+                    }
+                };
+
+                let result = match operator.token_type {
+                    TokenType::PlusEqual | TokenType::PlusPlus => {
+                        LiteralValue::Number(var_num + value_num)
+                    }
+                    TokenType::MinusEqual | TokenType::MinusMinus => {
+                        LiteralValue::Number(var_num - value_num)
+                    }
+                    _ => {
+                        return Err(RuntimeError::new(&format!(
+                            "Expected '+'|'-'|'++'|'--' found '{}'",
+                            operator.token_type
+                        )));
+                    }
+                };
+                Environment::assign(self.environment.clone(), name, result.clone())?;
+                Ok(result)
+            }
             Expr::Variable(name) => Environment::get(self.environment.clone(), name),
             Expr::Unary(op_token, right) => {
                 let right_val = self.evaluate(right)?;
@@ -132,7 +153,7 @@ impl Interpreter {
                     "Evaluting right hand side of Binary Expression",
                 )?;
                 match op_token.token_type {
-                    TokenType::Plus => match (left_val, right_val) {
+                    TokenType::Plus | TokenType::PlusPlus => match (left_val, right_val) {
                         (LiteralValue::Number(a), LiteralValue::Number(b)) => {
                             Ok(LiteralValue::Number(a + b))
                         }
@@ -141,7 +162,9 @@ impl Interpreter {
                         }
                         _ => Err(RuntimeError::new("Cannot add tokens")),
                     },
-                    TokenType::Minus => binary_numeric_op(left_val, right_val, |a, b| a - b),
+                    TokenType::Minus | TokenType::MinusMinus => {
+                        binary_numeric_op(left_val, right_val, |a, b| a - b)
+                    }
                     TokenType::Star => binary_numeric_op(left_val, right_val, |a, b| a * b),
                     TokenType::Slash => {
                         if right_val == LiteralValue::Number(0 as f64) {
@@ -159,7 +182,10 @@ impl Interpreter {
                     TokenType::LessEqual => binary_numeric_cmp(left_val, right_val, |a, b| a <= b),
                     TokenType::Caret => binary_numeric_op(left_val, right_val, |a, b| a.powf(b)),
                     TokenType::Percent => binary_numeric_op(left_val, right_val, |a, b| a % b),
-                    _ => Err(RuntimeError::new("Unknown Binary Operator")),
+                    unknown => Err(RuntimeError::new(&format!(
+                        "Unknown Binary Operator: {}",
+                        unknown
+                    ))),
                 }
             }
             Expr::Comma(left, right) => {
@@ -167,11 +193,15 @@ impl Interpreter {
                 let result = self.evaluate(right)?;
                 Ok(result)
             }
-            Expr::Ternary(condition, true_left, false_right) => {
+            Expr::Ternary {
+                condition,
+                true_branch,
+                false_branch,
+            } => {
                 let condition = self.evaluate(condition)?;
                 match condition.is_truthy() {
-                    true => self.evaluate(true_left),
-                    false => self.evaluate(false_right),
+                    true => self.evaluate(true_branch),
+                    false => self.evaluate(false_branch),
                 }
             }
         }

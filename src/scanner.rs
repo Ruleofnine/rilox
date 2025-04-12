@@ -1,7 +1,7 @@
 use crate::error::ErrorReporter;
-use crate::token::{Literal, Token};
+use crate::expr::LiteralValue;
+use crate::token::Token;
 use crate::token_type::TokenType;
-use log::debug;
 pub struct Scanner<'a> {
     source: String,
     tokens: Vec<Token>,
@@ -37,7 +37,7 @@ impl<'a> Scanner<'a> {
     pub fn add_token(&mut self, token_type: TokenType) {
         self.add_token_with_literal(token_type, None);
     }
-    pub fn add_token_with_literal(&mut self, token_type: TokenType, literal: Option<Literal>) {
+    pub fn add_token_with_literal(&mut self, token_type: TokenType, literal: Option<LiteralValue>) {
         let text = &self.source[self.start..self.current];
         self.tokens
             .push(Token::new(token_type, text.to_string(), literal, self.line));
@@ -89,8 +89,24 @@ impl<'a> Scanner<'a> {
             '}' => self.add_token(TokenType::RightBrace),
             ',' => self.add_token(TokenType::Comma),
             '.' => self.add_token(TokenType::Dot),
-            '-' => self.add_token(TokenType::Minus),
-            '+' => self.add_token_if_matches('+', TokenType::PlusPlus, TokenType::Plus),
+            '-' => {
+                if self.match_char('-') {
+                    self.add_token(TokenType::MinusMinus);
+                } else if self.match_char('=') {
+                    self.add_token(TokenType::MinusEqual);
+                } else {
+                    self.add_token(TokenType::Minus);
+                }
+            }
+            '+' => {
+                if self.match_char('+') {
+                    self.add_token(TokenType::PlusPlus);
+                } else if self.match_char('=') {
+                    self.add_token(TokenType::PlusEqual);
+                } else {
+                    self.add_token(TokenType::Plus);
+                }
+            }
             ';' => self.add_token(TokenType::Semicolon),
             '*' => self.add_token(TokenType::Star),
             '?' => self.add_token(TokenType::Question),
@@ -156,7 +172,7 @@ impl<'a> Scanner<'a> {
         if let Some(value) = self.source.get(start..end) {
             self.add_token_with_literal(
                 TokenType::String,
-                Some(Literal::String(value.to_string())),
+                Some(LiteralValue::String(value.to_string())),
             );
         } else {
             self.error("Invalid UTF-8 in string literal.");
@@ -174,7 +190,7 @@ impl<'a> Scanner<'a> {
         }
         let num_to_parse = &self.source[self.start..self.current];
         if let Ok(num) = num_to_parse.parse::<f64>() {
-            self.add_token_with_literal(TokenType::Number, Some(Literal::Number(num)));
+            self.add_token_with_literal(TokenType::Number, Some(LiteralValue::Number(num)));
         } else {
             self.error(&format!("Could not parse number: {}", num_to_parse));
         };
