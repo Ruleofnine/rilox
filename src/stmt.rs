@@ -12,4 +12,13 @@ pub enum Stmt {
         else_branch: Option<Box<Stmt>>,
     },
     While(Expr, Box<Stmt>),
+    Break,
+    Continue,
+}
+#[derive(PartialEq, Debug)]
+pub enum ControlFlow {
+    None,
+    Break,
+    Continue,
+    Return(Expr),
 }

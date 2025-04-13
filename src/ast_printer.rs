@@ -10,14 +10,35 @@ pub fn print_ast(expr: &Expr) -> String {
         },
         Expr::Grouping(inner) => format!("(group {})", print_ast(inner)),
         Expr::Unary(op, right) => format!("({} {})", op.lexeme, print_ast(right)),
-        Expr::Binary(left, op, right) => {
-            format!("({} {} {})", print_ast(left), op.lexeme, print_ast(right))
+        Expr::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            format!(
+                "({} {} {})",
+                print_ast(left),
+                operator.lexeme,
+                print_ast(right)
+            )
         }
         Expr::Comma(left, right) => {
             format!("({}, {})", print_ast(left), print_ast(right))
         }
         Expr::Variable(name) => name.lexeme.clone(),
         Expr::Assign(name, value) => format!("(assign {} = {})", name.lexeme, print_ast(value)),
+        Expr::Logical {
+            left,
+            operator,
+            right,
+        } => {
+            format!(
+                "left: {}, operator: {}, right, {}",
+                print_ast(left),
+                operator,
+                print_ast(right)
+            )
+        }
         Expr::Ternary {
             condition,
             true_branch,

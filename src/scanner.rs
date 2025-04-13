@@ -94,6 +94,8 @@ impl<'a> Scanner<'a> {
                     self.add_token(TokenType::MinusMinus);
                 } else if self.match_char('=') {
                     self.add_token(TokenType::MinusEqual);
+                } else if self.match_char('>') {
+                    self.add_token(TokenType::ArrowRight);
                 } else {
                     self.add_token(TokenType::Minus);
                 }
@@ -216,6 +218,7 @@ fn identifier_type(name: &str) -> TokenType {
         "else" => TokenType::Else,
         "false" => TokenType::False,
         "for" => TokenType::For,
+        "loop" => TokenType::Loop,
         "fun" => TokenType::Fun,
         "if" => TokenType::If,
         "nil" => TokenType::Nil,
@@ -227,6 +230,8 @@ fn identifier_type(name: &str) -> TokenType {
         "true" => TokenType::True,
         "var" => TokenType::Var,
         "while" => TokenType::While,
+        "break" => TokenType::Break,
+        "continue" => TokenType::Continue,
         _ => TokenType::Identifier,
     }
 }

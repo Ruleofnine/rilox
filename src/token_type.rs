@@ -31,6 +31,7 @@ pub enum TokenType {
     MinusMinus,
     PlusEqual,
     PlusPlus,
+    ArrowRight,
 
     // Literals.
     Identifier,
@@ -39,11 +40,14 @@ pub enum TokenType {
 
     // Keywords.
     And,
+    Break,
+    Continue,
     Class,
     Else,
     False,
     Fun,
     For,
+    Loop,
     If,
     Nil,
     Or,

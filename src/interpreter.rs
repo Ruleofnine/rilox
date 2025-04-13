@@ -1,10 +1,10 @@
-use std::cell::RefCell;
-
 use crate::environment::Environment;
 use crate::error::{RuntimeError, RuntimeResult};
 use crate::expr::{Expr, LiteralValue};
-use crate::stmt::Stmt;
+use crate::stmt::{ControlFlow, Stmt};
 use crate::token_type::TokenType;
+use log::debug;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct Interpreter {
@@ -17,18 +17,20 @@ impl Interpreter {
         }
     }
 
-    pub fn statement(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
-        match stmt {
+    pub fn statement(&mut self, stmt: &Stmt) -> Result<ControlFlow, RuntimeError> {
+        let flow = match stmt {
             Stmt::Expression(expr) => {
                 self.evaluate(expr).map_err(|e| {
                     RuntimeError::with_source("while evaluating expression statement", e)
                 })?;
+                ControlFlow::None
             }
             Stmt::Print(expr) => {
                 let value = self.evaluate(expr).map_err(|e| {
                     RuntimeError::with_source("while evaluating print expression", e)
                 })?;
                 println!("{}", value);
+                ControlFlow::None
             }
             Stmt::Var(name, value) => {
                 let value = if let Some(expr) = value {
@@ -39,12 +41,13 @@ impl Interpreter {
                 self.environment
                     .borrow_mut()
                     .define(name.lexeme.to_string(), value);
+                ControlFlow::None
             }
             Stmt::Block(stmt_list) => {
                 let new_env = Rc::new(RefCell::new(Environment::new_enclosing_env(
                     self.environment.clone(),
                 )));
-                self.execute_block(stmt_list, new_env)?;
+                self.execute_block(stmt_list, new_env)?
             }
             Stmt::If {
                 condition,
@@ -57,30 +60,47 @@ impl Interpreter {
                     false => {
                         if let Some(else_branch) = else_branch {
                             self.statement(else_branch)?
+                        } else {
+                            ControlFlow::None
                         }
                     }
                 }
             }
             Stmt::While(cond, statement) => {
                 while self.evaluate(cond)?.is_truthy() {
-                    self.statement(statement)?;
+                    let result = self.statement(statement)?;
+                    match result {
+                        ControlFlow::None => {}
+                        ControlFlow::Break => break,
+                        ControlFlow::Return(value) => return Ok(ControlFlow::Return(value)),
+                        ControlFlow::Continue => continue, // if you add it later
+                    }
                 }
+                ControlFlow::None
             }
-        }
-        Ok(())
+
+            Stmt::Break => ControlFlow::Break,
+            Stmt::Continue => ControlFlow::Continue,
+        };
+        Ok(flow)
     }
     fn execute_block(
         &mut self,
         stmts: &[Stmt],
         environment: Rc<RefCell<Environment>>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<ControlFlow, RuntimeError> {
         let previous_env = self.environment.clone();
         self.environment = environment;
+        let mut result = ControlFlow::None;
         for stmt in stmts {
-            self.statement(stmt)?;
+            result = self.statement(stmt)?;
+            match result {
+                ControlFlow::None => continue,
+                _ => break,
+            }
         }
         self.environment = previous_env;
-        Ok(())
+        Ok(result)
     }
     fn evaluate_with_context(&mut self, expr: &Expr, context: &str) -> RuntimeResult<LiteralValue> {
         self.evaluate(expr)
@@ -96,6 +116,28 @@ impl Interpreter {
                 Environment::assign(self.environment.clone(), name, expr.clone())?;
                 Ok(expr)
             }
+            Expr::Logical {
+                left,
+                operator,
+                right,
+            } => match operator.token_type {
+                TokenType::Or => {
+                    let left = self.evaluate(left)?;
+                    if left.is_truthy() {
+                        return Ok(left);
+                    };
+                    self.evaluate(right)
+                }
+
+                TokenType::And => {
+                    let left = self.evaluate(left)?;
+                    if !left.is_truthy() {
+                        return Ok(left);
+                    };
+                    self.evaluate(right)
+                }
+                _ => unreachable!(),
+            },
             Expr::Mutation {
                 name,
                 operator,
@@ -145,14 +187,18 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("Unknown Unary Operator")),
                 }
             }
-            Expr::Binary(left, op_token, right) => {
+            Expr::Binary {
+                left,
+                operator,
+                right,
+            } => {
                 let left_val = self
                     .evaluate_with_context(left, "Evaluting left hand side of Binary Expression")?;
                 let right_val = self.evaluate_with_context(
                     right,
                     "Evaluting right hand side of Binary Expression",
                 )?;
-                match op_token.token_type {
+                match operator.token_type {
                     TokenType::Plus | TokenType::PlusPlus => match (left_val, right_val) {
                         (LiteralValue::Number(a), LiteralValue::Number(b)) => {
                             Ok(LiteralValue::Number(a + b))

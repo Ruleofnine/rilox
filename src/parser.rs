@@ -17,6 +17,7 @@ statement      → exprStmt
                | block
                | ifStmt
                | whileStmt
+               | braekStmt
 
 
 exprStmt       → expression ";"
@@ -24,6 +25,8 @@ printStmt      → "print" expression ";"
 block          → "{" delcaration* "}"
 ifStmt         → "if" "(" expression ")"  block ( else" block )?
 whileStmt      → "while" "(" expression ")" block
+loopStmt       → "loop" ( IDENTIFIER "->" )? NUMBER
+breakStmt      → "break" ";"
 
 expression     → assignment
 
@@ -33,7 +36,11 @@ assignment → ( "++" | "--" ) IDENTIFIER
 
 comma          → ternary ( "," ternary )*
 
-ternary        → equality ( "?" ternary ":" ternary )?
+ternary        → or ( "?" ternary ":" ternary )?
+
+or             → and ( "or" and )*
+
+and            → equality ( "and" equality )*
 
 equality       → comparison ( ( "==" | "!=" ) comparison )*
 comparison     → term ( ( ">" | ">=" | "<" | "<=" ) term )*
@@ -159,7 +166,6 @@ impl<'a> Parser<'a> {
     }
     pub fn for_stmt(&mut self) -> Result<Stmt, ParseError> {
         self.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
-        debug!("{:?}", self.peek());
         let initializer = if self.match_any(&[TokenType::Var]) {
             Some(self.var_declaration()?)
         } else if !self.check(TokenType::Semicolon) {
@@ -191,6 +197,69 @@ impl<'a> Parser<'a> {
             Ok(while_stmt)
         }
     }
+    //loopStmt       → "loop" ( IDENTIFIER ( "=" term )? "->" )? term
+    pub fn loop_stmt(&mut self) -> Result<Stmt, ParseError> {
+        // Optional variable name handling
+        let variable_token = if self.match_any(&[TokenType::Identifier]) {
+            self.previous().clone()
+        } else {
+            Token {
+                token_type: TokenType::Identifier,
+                lexeme: "i".to_string(),
+                literal: None,
+                line: self.peek().line, // Use actual current line for better error reporting
+            }
+        };
+
+        // Optional initial value handling
+        let initial_expr = if self.match_any(&[TokenType::Equal]) {
+            self.term()?
+        } else {
+            Expr::Literal(LiteralValue::Number(0.0))
+        };
+
+        // Expect '->' token after optional init
+        self.consume(
+            TokenType::ArrowRight,
+            "Expected '->' after variable initialization.",
+        )?;
+
+        // Parse ending expression (upper bound)
+        let ending_expr = self.term()?;
+
+        // Parse the loop body (user's block)
+        let user_body = self.statement()?;
+
+        // Build the loop condition: (variable < ending_expr)
+        let condition = Expr::Binary {
+            left: Box::new(Expr::Variable(variable_token.clone())),
+            operator: Token {
+                token_type: TokenType::Less,
+                lexeme: "<".to_string(),
+                literal: None,
+                line: self.peek().line,
+            },
+            right: Box::new(ending_expr),
+        };
+
+        // Build increment expression: (variable ++)
+        let increment = Expr::Mutation {
+            name: variable_token.clone(),
+            operator: Token {
+                token_type: TokenType::PlusPlus,
+                lexeme: "++".to_string(),
+                literal: None,
+                line: self.peek().line,
+            },
+            value: Box::new(Expr::Literal(LiteralValue::Number(1.0))),
+        };
+        let loop_body = Stmt::Block(vec![user_body, Stmt::Expression(increment)]);
+
+        Ok(Stmt::Block(vec![
+            Stmt::Var(variable_token, Some(initial_expr)),
+            Stmt::While(condition, Box::new(loop_body)),
+        ]))
+    }
     pub fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
         let expr = self.expression()?;
         self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
@@ -199,7 +268,6 @@ impl<'a> Parser<'a> {
     pub fn statement(&mut self) -> Result<Stmt, ParseError> {
         //TODO this seems odd that we advance in each, but keepeing it flexible
         //might be smart
-        debug!("tt: {:?}", self.peek().token_type);
         match self.peek().token_type {
             TokenType::Print => {
                 self.advance();
@@ -223,6 +291,21 @@ impl<'a> Parser<'a> {
             TokenType::For => {
                 self.advance();
                 self.for_stmt()
+            }
+            TokenType::Loop => {
+                self.advance();
+                self.loop_stmt()
+            }
+            TokenType::Break => {
+                self.advance();
+                self.consume(TokenType::Semicolon, "Expect ';' after 'break'.")?;
+                Ok(Stmt::Break)
+            }
+            TokenType::Continue => {
+                error!("hi :)");
+                self.advance();
+                self.consume(TokenType::Semicolon, "Expect ';' after 'continue'.")?;
+                Ok(Stmt::Continue)
             }
             _ => self.expression_statement(),
         }
@@ -271,7 +354,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
     pub fn ternary(&mut self) -> Result<Expr, ParseError> {
-        let mut expr = self.equality()?;
+        let mut expr = self.or()?;
         if self.match_any(&[TokenType::Question]) {
             let expr_on_true = self.ternary().unwrap_or_else(|_| {
                 let token = self.peek().clone();
@@ -293,6 +376,33 @@ impl<'a> Parser<'a> {
                 let token = self.peek().clone();
                 self.error(&token, "Missing ':' in Ternary Oprerator");
                 return Err(ParseError);
+            }
+        }
+        Ok(expr)
+    }
+    pub fn or(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.and()?;
+        while self.match_any(&[TokenType::Or]) {
+            let operator = self.previous().clone();
+            let right = Box::new(self.and()?);
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                operator,
+                right,
+            }
+        }
+        Ok(expr)
+    }
+
+    pub fn and(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.equality()?;
+        while self.match_any(&[TokenType::And]) {
+            let operator = self.previous().clone();
+            let right = Box::new(self.equality()?);
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                operator,
+                right,
             }
         }
         Ok(expr)
@@ -518,7 +628,11 @@ impl<'a> Parser<'a> {
             }
             let operator = self.previous().clone();
             let rhs = parse_rhs(self).unwrap_or(Expr::Error);
-            expr = Expr::Binary(Box::new(expr), operator, Box::new(rhs));
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(rhs),
+            };
         }
 
         Ok(expr)

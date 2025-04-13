@@ -1,14 +1,23 @@
 use crate::token::Token;
 use std::fmt;
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
-    Binary(Box<Expr>, Token, Box<Expr>),
+    Binary {
+        left: Box<Expr>,
+        operator: Token,
+        right: Box<Expr>,
+    },
     Grouping(Box<Expr>),
     Literal(LiteralValue),
     Unary(Token, Box<Expr>),
     Comma(Box<Expr>, Box<Expr>),
     Variable(Token),
     Assign(Token, Box<Expr>),
+    Logical {
+        left: Box<Expr>,
+        operator: Token,
+        right: Box<Expr>,
+    },
     Mutation {
         name: Token,
         operator: Token,
